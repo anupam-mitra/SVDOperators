@@ -3,4 +3,4 @@ import ITensorMPS
 
 include("gate_svd_helpers.jl")
 
-main()
+main(parse_dimension(ARGS))

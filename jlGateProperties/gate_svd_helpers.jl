@@ -1,8 +1,26 @@
-function make_two_qubit_indices()
-    sa = ITensorMPS.siteind("S=1/2")
-    sb = ITensorMPS.siteind("S=1/2")
+function parse_dimension(args)
+    if isempty(args)
+        return 2
+    elseif length(args) == 1
+        d = tryparse(Int, args[1])
+        d === nothing && error("expected integer local dimension d, got $(args[1])")
+        d < 2 && error("expected local dimension d >= 2, got $d")
+        return d
+    end
 
-    # Each gate layer acts on a new prime level of the same two qubits.
+    error("usage: julia --project=. jlGateProperties/svd_2q_gates.jl [d]")
+end
+
+function make_two_site_indices(d)
+    if d == 2
+        sa = ITensorMPS.siteind("S=1/2")
+        sb = ITensorMPS.siteind("S=1/2")
+    else
+        sa = ITensorMPS.siteind("Qudit"; dim=d)
+        sb = ITensorMPS.siteind("Qudit"; dim=d)
+    end
+
+    # Each gate layer acts on a new prime level of the same two sites.
     sa1 = ITensors.prime(sa)
     sa2 = ITensors.prime(sa1)
     sa3 = ITensors.prime(sa2)
@@ -15,6 +33,8 @@ function make_two_qubit_indices()
 
     return (; sa, sb, sa1, sa2, sa3, sa4, sb1, sb2, sb3, sb4)
 end
+
+computational_basis_index(a, b, d) = a * d + b + 1
 
 function gate_singular_values(gate, left_inds)
     _, s, _ = ITensors.svd(gate, left_inds)
@@ -51,13 +71,63 @@ function rxx_gate(theta, sa, sb)
     return ITensors.op(matrix, sa, sb)
 end
 
-function fixed_gate_cases(indices)
+function sum_gate_matrix(d)
+    matrix = zeros(ComplexF64, d^2, d^2)
+    for a in 0:(d - 1), b in 0:(d - 1)
+        input_index = computational_basis_index(a, b, d)
+        output_index = computational_basis_index(a, mod(a + b, d), d)
+        matrix[output_index, input_index] = 1.0
+    end
+    return matrix
+end
+
+function cz_gate_matrix(d)
+    matrix = zeros(ComplexF64, d^2, d^2)
+    ω = cis(2 * π / d)
+    for a in 0:(d - 1), b in 0:(d - 1)
+        index = computational_basis_index(a, b, d)
+        matrix[index, index] = ω^(a * b)
+    end
+    return matrix
+end
+
+function swap_gate_matrix(d)
+    matrix = zeros(ComplexF64, d^2, d^2)
+    for a in 0:(d - 1), b in 0:(d - 1)
+        input_index = computational_basis_index(a, b, d)
+        output_index = computational_basis_index(b, a, d)
+        matrix[output_index, input_index] = 1.0
+    end
+    return matrix
+end
+
+function sum_gate(d, sa, sb)
+    return ITensors.op(sum_gate_matrix(d), sa, sb)
+end
+
+function cz_gate(d, sa, sb)
+    return ITensors.op(cz_gate_matrix(d), sa, sb)
+end
+
+function swap_gate(d, sa, sb)
+    return ITensors.op(swap_gate_matrix(d), sa, sb)
+end
+
+function qubit_fixed_gate_cases(indices)
     return [
         ("T I CXab I T CXba", composite_gate(indices), [indices.sa, indices.sa4]),
         ("CZ", ITensorMPS.op("CZ", indices.sa, indices.sb), [indices.sa, indices.sa1]),
         ("iSWAP", ITensorMPS.op("iSWAP", indices.sa, indices.sb), [indices.sa, indices.sa1]),
         ("Product gate", product_gate(indices), [indices.sa, indices.sa1]),
         ("SWAP", ITensorMPS.op("SWAP", indices.sa, indices.sb), [indices.sa, indices.sa1]),
+    ]
+end
+
+function qudit_fixed_gate_cases(d, indices)
+    return [
+        ("SUM (CX_d)", sum_gate(d, indices.sa, indices.sb), [indices.sa, indices.sa1]),
+        ("CZ_d", cz_gate(d, indices.sa, indices.sb), [indices.sa, indices.sa1]),
+        ("SWAP_d", swap_gate(d, indices.sa, indices.sb), [indices.sa, indices.sa1]),
     ]
 end
 
@@ -71,14 +141,24 @@ function rxx_sweep_cases(indices)
     ]
 end
 
-function main()
-    indices = make_two_qubit_indices()
-
-    for (label, gate, left_inds) in fixed_gate_cases(indices)
+function run_cases(cases)
+    for (label, gate, left_inds) in cases
         print_singular_values(label, gate_singular_values(gate, left_inds))
     end
+end
 
-    for (label, gate, left_inds) in rxx_sweep_cases(indices)
-        print_singular_values(label, gate_singular_values(gate, left_inds))
+function main(d)
+    indices = make_two_site_indices(d)
+
+    if d == 2
+        run_cases(qubit_fixed_gate_cases(indices))
+        run_cases(rxx_sweep_cases(indices))
+        return nothing
     end
+
+    println("d = $d")
+    println("Using standard qudit gate generalizations only.")
+    println()
+    run_cases(qudit_fixed_gate_cases(d, indices))
+    return nothing
 end
