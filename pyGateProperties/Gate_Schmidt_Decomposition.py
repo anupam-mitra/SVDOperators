@@ -16,9 +16,13 @@
 import sys
 
 import numpy as np
-from qiskit import QuantumCircuit
-from qiskit.circuit.library import RXXGate
-from qiskit.quantum_info import Operator
+
+from pyGateProperties.core import gate_singular_values
+from pyGateProperties.qiskit_utils import circuit_singular_values
+from pyGateProperties.qubit_circuits import composite_circuit, cz_circuit, iswap_circuit, product_gate_circuit, swap_circuit
+from pyGateProperties.qubit_matrices import rxx_gate_matrix
+from pyGateProperties.qudit_matrices import sum_gate_matrix, cz_gate_matrix, swap_gate_matrix
+
 
 # %%
 def parse_dimension(args: list[str]) -> int:
@@ -37,103 +41,6 @@ def parse_dimension(args: list[str]) -> int:
         raise ValueError(f"expected local dimension d >= 2, got {d}")
 
     return d
-
-
-# %%
-def gate_singular_values(gate_matrix: np.ndarray, d: int) -> np.ndarray:
-    """Singular values of a two-site gate under the Schmidt bipartition."""
-
-    expected_shape = (d * d, d * d)
-    if gate_matrix.shape != expected_shape:
-        raise ValueError(f"expected a {expected_shape} two-site gate matrix, got {gate_matrix.shape}")
-
-    gate_tensor = gate_matrix.reshape((d, d, d, d))
-    gate_tensor_transposed = gate_tensor.transpose((0, 2, 1, 3))
-    gate_tensor_transposed_matrix = gate_tensor_transposed.reshape(d * d, d * d)
-    return np.linalg.svdvals(gate_tensor_transposed_matrix)
-
-# %%
-def circuit_matrix(circuit: QuantumCircuit) -> np.ndarray:
-    return Operator.from_circuit(circuit).to_matrix()
-
-# %%
-def circuit_singular_values(circuit: QuantumCircuit) -> np.ndarray:
-    return gate_singular_values(circuit_matrix(circuit), 2)
-
-# %%
-def composite_circuit() -> QuantumCircuit:
-    circuit = QuantumCircuit(2)
-    circuit.t(0)
-    circuit.cx(0, 1)
-    circuit.t(1)
-    circuit.cx(1, 0)
-    return circuit
-
-# %%
-def cz_circuit() -> QuantumCircuit:
-    circuit = QuantumCircuit(2)
-    circuit.cz(0, 1)
-    return circuit
-
-# %%
-def iswap_circuit() -> QuantumCircuit:
-    circuit = QuantumCircuit(2)
-    circuit.iswap(0, 1)
-    return circuit
-
-# %%
-def product_gate_circuit() -> QuantumCircuit:
-    circuit = QuantumCircuit(2)
-    circuit.t(0)
-    circuit.s(1)
-    return circuit
-
-# %%
-def swap_circuit() -> QuantumCircuit:
-    circuit = QuantumCircuit(2)
-    circuit.swap(0, 1)
-    return circuit
-
-# %%
-def rxx_gate_matrix(theta: float) -> np.ndarray:
-    return Operator(RXXGate(theta)).data
-
-# %%
-def computational_basis_index(a: int, b: int, d: int) -> int:
-    return a * d + b
-
-
-# %%
-def sum_gate_matrix(d: int) -> np.ndarray:
-    matrix = np.zeros((d * d, d * d), dtype=complex)
-    for a in range(d):
-        for b in range(d):
-            input_index = computational_basis_index(a, b, d)
-            output_index = computational_basis_index(a, (a + b) % d, d)
-            matrix[output_index, input_index] = 1.0
-    return matrix
-
-
-# %%
-def cz_gate_matrix(d: int) -> np.ndarray:
-    matrix = np.zeros((d * d, d * d), dtype=complex)
-    omega = np.exp(2j * np.pi / d)
-    for a in range(d):
-        for b in range(d):
-            index = computational_basis_index(a, b, d)
-            matrix[index, index] = omega ** (a * b)
-    return matrix
-
-
-# %%
-def swap_gate_matrix(d: int) -> np.ndarray:
-    matrix = np.zeros((d * d, d * d), dtype=complex)
-    for a in range(d):
-        for b in range(d):
-            input_index = computational_basis_index(a, b, d)
-            output_index = computational_basis_index(b, a, d)
-            matrix[output_index, input_index] = 1.0
-    return matrix
 
 
 # %%
